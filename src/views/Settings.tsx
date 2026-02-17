@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { listen } from "@tauri-apps/api/event";
 import {
   loadSettings,
   saveSettings,
   checkMediaPath,
+  checkMusicPath,
   scanMediaDirsProgressive,
+  scanMusicDirsProgressive,
   fetchMetadataBatch,
   rdGetDeviceCode,
   rdPollCredentials,
@@ -22,6 +25,10 @@ export default function SettingsView() {
   const [pathInput, setPathInput] = useState("");
   const [pathCheck, setPathCheck] = useState<PathCheckResult | null>(null);
   const [checkingPath, setCheckingPath] = useState(false);
+  const [musicPathInput, setMusicPathInput] = useState("");
+  const [musicPathCheck, setMusicPathCheck] = useState<PathCheckResult | null>(null);
+  const [checkingMusicPath, setCheckingMusicPath] = useState(false);
+  const [musicScanning, setMusicScanning] = useState(false);
   const [rdStatus, setRdStatus] = useState<RdStatusInfo | null>(null);
   const [rdCode, setRdCode] = useState<string | null>(null);
   const [rdUrl, setRdUrl] = useState<string>("");
@@ -30,6 +37,14 @@ export default function SettingsView() {
 
   useEffect(() => {
     load();
+  }, []);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen("music-scan-complete", () => setMusicScanning(false)).then(
+      (fn) => { unlisten = fn; }
+    );
+    return () => { unlisten?.(); };
   }, []);
 
   async function load() {
@@ -43,6 +58,8 @@ export default function SettingsView() {
       setRdStatus(rdStatusRes);
       const paths = parsePaths(s["media_paths"]);
       if (paths.length > 0 && !pathInput) setPathInput(paths[0]);
+      const musicPaths = parsePaths(s["music_paths"]);
+      if (musicPaths.length > 0 && !musicPathInput) setMusicPathInput(musicPaths[0]);
     } catch (err) {
       console.error("Failed to load settings:", err);
     } finally {
@@ -62,6 +79,10 @@ export default function SettingsView() {
 
   function getPaths(): string[] {
     return parsePaths(settings["media_paths"]);
+  }
+
+  function getMusicPaths(): string[] {
+    return parsePaths(settings["music_paths"]);
   }
 
   async function handleSave() {
@@ -95,6 +116,26 @@ export default function SettingsView() {
     setSettings({ ...settings, media_paths: JSON.stringify(paths) });
   }
 
+  async function handleAddMusicPath() {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      defaultPath: "/Volumes",
+    });
+    if (selected && typeof selected === "string") {
+      const paths = getMusicPaths();
+      if (!paths.includes(selected)) {
+        paths.push(selected);
+        setSettings({ ...settings, music_paths: JSON.stringify(paths) });
+      }
+    }
+  }
+
+  function handleRemoveMusicPath(p: string) {
+    const paths = getMusicPaths().filter((x) => x !== p);
+    setSettings({ ...settings, music_paths: JSON.stringify(paths) });
+  }
+
   async function handleCheckPath() {
     const path = pathInput.trim() || getPaths()[0];
     if (!path) return;
@@ -116,6 +157,43 @@ export default function SettingsView() {
       });
     } finally {
       setCheckingPath(false);
+    }
+  }
+
+  async function handleCheckMusicPath() {
+    const path = musicPathInput.trim() || getMusicPaths()[0];
+    if (!path) return;
+    try {
+      setCheckingMusicPath(true);
+      setMusicPathCheck(null);
+      const result = await checkMusicPath(path);
+      setMusicPathCheck(result);
+    } catch (err) {
+      setMusicPathCheck({
+        path,
+        exists: false,
+        is_directory: false,
+        files_found: 0,
+        sample_files: [],
+        sample_all: [],
+        subdirs: [],
+        error: String(err),
+      });
+    } finally {
+      setCheckingMusicPath(false);
+    }
+  }
+
+  async function handleScanMusic() {
+    const paths = getMusicPaths();
+    if (paths.length === 0) return;
+    try {
+      setMusicScanning(true);
+      setMusicPathCheck(null);
+      await scanMusicDirsProgressive(paths);
+    } catch (err) {
+      console.error("Music scan failed:", err);
+      setMusicScanning(false);
     }
   }
 
@@ -240,6 +318,79 @@ export default function SettingsView() {
                 </p>
                 {pathCheck.subdirs.length > 0 && (
                   <p>Unterordner: {pathCheck.subdirs.slice(0, 5).join(", ")}…</p>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </section>
+
+      <section className="settings-section">
+        <h2>Musikpfade</h2>
+        <p className="settings-hint">
+          Ordner mit Musikdateien (MP3, FLAC, M4A, etc.). NAS z.B. unter{" "}
+          <code>/Volumes/Diskstation/music</code>
+        </p>
+        <div className="path-list">
+          {getMusicPaths().map((p) => (
+            <div key={p} className="path-item">
+              <span className="path-text">{p}</span>
+              <button
+                type="button"
+                className="btn-secondary btn-sm"
+                onClick={() => handleRemoveMusicPath(p)}
+              >
+                Entfernen
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="path-input-row">
+          <input
+            type="text"
+            placeholder="/Pfad/zum/Musik-Ordner"
+            value={musicPathInput}
+            onChange={(e) => setMusicPathInput(e.target.value)}
+          />
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={handleAddMusicPath}
+          >
+            Ordner wählen
+          </button>
+        </div>
+        <div className="action-row">
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={handleCheckMusicPath}
+            disabled={checkingMusicPath || getMusicPaths().length === 0}
+          >
+            {checkingMusicPath ? "Prüfe…" : "Prüfen"}
+          </button>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={handleScanMusic}
+            disabled={musicScanning || getMusicPaths().length === 0}
+          >
+            {musicScanning ? "Scanne…" : "Musikbibliothek scannen"}
+          </button>
+        </div>
+        {musicPathCheck && (
+          <div className="scan-result">
+            {musicPathCheck.error ? (
+              <p className="status-warn">{musicPathCheck.error}</p>
+            ) : (
+              <>
+                <p>
+                  {musicPathCheck.exists
+                    ? `✓ Verzeichnis gefunden, ${musicPathCheck.files_found} Audiodateien`
+                    : "✗ Pfad nicht gefunden"}
+                </p>
+                {musicPathCheck.subdirs.length > 0 && (
+                  <p>Unterordner: {musicPathCheck.subdirs.slice(0, 5).join(", ")}…</p>
                 )}
               </>
             )}
