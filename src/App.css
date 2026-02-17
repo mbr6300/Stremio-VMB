@@ -1327,11 +1327,12 @@ body {
 .overlay-content {
   background: var(--bg-card);
   border-radius: var(--radius);
-  max-width: 480px;
+  max-width: 540px;
   max-height: 85vh;
   overflow-y: auto;
   position: relative;
-  padding: 24px;
+  padding: 28px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
 .overlay-loading {
@@ -1399,29 +1400,95 @@ body {
   color: var(--text-secondary);
 }
 
-.overlay-person-bio {
-  font-size: 14px;
-  line-height: 1.6;
-  margin-bottom: 16px;
+.overlay-person-header-facts {
+  margin-top: 4px;
 }
 
-.overlay-person-facts p,
-.overlay-person-anecdotes li,
-.overlay-trivia li {
+.overlay-person-bio {
+  font-size: 15px;
+  line-height: 1.7;
+  margin-bottom: 20px;
+  color: var(--text-primary);
+}
+
+.formatted-text-block {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.formatted-paragraph {
+  margin-bottom: 1em;
+}
+
+.formatted-paragraph:last-child {
+  margin-bottom: 0;
+}
+
+.overlay-person-facts {
+  margin-bottom: 20px;
+}
+
+.overlay-person-facts p {
+  margin-bottom: 10px;
   font-size: 14px;
-  line-height: 1.5;
-  margin-bottom: 8px;
+  line-height: 1.6;
+}
+
+.overlay-person-anecdotes,
+.overlay-trivia {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
 }
 
 .overlay-person-anecdotes h4,
 .overlay-trivia h4 {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
+  color: var(--text-primary);
+}
+
+.overlay-person-anecdotes ul,
+.overlay-trivia ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.overlay-person-anecdotes li,
+.overlay-trivia li {
+  font-size: 14px;
+  line-height: 1.65;
+  margin-bottom: 12px;
+  padding-left: 1em;
+  position: relative;
+}
+
+.overlay-person-anecdotes li::before,
+.overlay-trivia li::before {
+  content: "•";
+  position: absolute;
+  left: 0;
+  color: var(--accent);
+  font-weight: bold;
+}
+
+.overlay-person-anecdotes li:last-child,
+.overlay-trivia li:last-child {
+  margin-bottom: 0;
 }
 
 .overlay-tagline {
   font-style: italic;
+  font-size: 15px;
+  line-height: 1.6;
+  margin-bottom: 20px;
+  color: var(--text-secondary);
+}
+
+.overlay-extended h2 {
+  font-size: 20px;
   margin-bottom: 16px;
 }
 

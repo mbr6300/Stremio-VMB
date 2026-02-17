@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useParams, useNavigate } from "react-router-dom";
 import {
@@ -36,6 +36,9 @@ export default function DiscoverDetail() {
   const [extendedOverlay, setExtendedOverlay] = useState<MediaExtendedInfo | null>(null);
   const [extendedLoading, setExtendedLoading] = useState(false);
   const [actorSuggestions, setActorSuggestions] = useState<ActorMovieSuggestion[]>([]);
+  const personCacheRef = useRef<Map<number, PersonDetails>>(new Map());
+  const extendedInfoRef = useRef<MediaExtendedInfo | null>(null);
+  const preloadTmdbIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (tmdbId && mediaType) loadDetail(Number(tmdbId), mediaType);
@@ -132,12 +135,54 @@ export default function DiscoverDetail() {
       .catch(() => setActorSuggestions([]));
   }, [metadata?.tmdb_id, castCrew?.cast, mediaTypeForApi]);
 
+  useEffect(() => {
+    if (!metadata?.tmdb_id) return;
+    const displayTitle = metadata.title || "Unbekannt";
+    personCacheRef.current.clear();
+    extendedInfoRef.current = null;
+    preloadTmdbIdRef.current = metadata.tmdb_id;
+
+    getMediaExtendedInfo(
+      metadata.tmdb_id,
+      mediaTypeForApi,
+      displayTitle,
+      metadata.release_date?.slice(0, 4) ?? undefined
+    )
+      .then((info) => {
+        if (preloadTmdbIdRef.current === metadata.tmdb_id) {
+          extendedInfoRef.current = info;
+        }
+      })
+      .catch(() => {});
+
+    const castIds = (castCrew?.cast ?? [])
+      .filter((m): m is CastMember & { id: number } => typeof m.id === "number")
+      .map((m) => m.id)
+      .slice(0, 5);
+
+    castIds.forEach((pid) => {
+      getPersonDetails(pid, displayTitle)
+        .then((details) => {
+          if (preloadTmdbIdRef.current === metadata.tmdb_id) {
+            personCacheRef.current.set(pid, details);
+          }
+        })
+        .catch(() => {});
+    });
+  }, [metadata?.tmdb_id, metadata?.title, metadata?.release_date, mediaTypeForApi, castCrew?.cast]);
+
   async function handleActorClick(member: CastMember) {
     if (member.id == null) return;
+    const cached = personCacheRef.current.get(member.id);
+    if (cached) {
+      setPersonOverlay(cached);
+      return;
+    }
     setPersonLoading(true);
     setPersonOverlay(null);
     try {
       const details = await getPersonDetails(member.id, displayTitle);
+      personCacheRef.current.set(member.id, details);
       setPersonOverlay(details);
     } catch (err) {
       console.error("Person details failed:", err);
@@ -148,6 +193,11 @@ export default function DiscoverDetail() {
 
   async function handleTriviaClick() {
     if (!metadata?.tmdb_id) return;
+    const cached = extendedInfoRef.current;
+    if (cached) {
+      setExtendedOverlay(cached);
+      return;
+    }
     setExtendedLoading(true);
     setExtendedOverlay(null);
     try {
@@ -157,6 +207,7 @@ export default function DiscoverDetail() {
         displayTitle,
         metadata?.release_date?.slice(0, 4) ?? undefined
       );
+      extendedInfoRef.current = info;
       setExtendedOverlay(info);
     } catch (err) {
       console.error("Extended info failed:", err);
@@ -411,11 +462,20 @@ export default function DiscoverDetail() {
                     {personOverlay.age != null && ` · ${personOverlay.age} Jahre`}
                   </p>
                 )}
+                {(personOverlay.height || personOverlay.partner_status) && (
+                  <p className="overlay-person-meta overlay-person-header-facts">
+                    {personOverlay.height && <span>Größe: {personOverlay.height}</span>}
+                    {personOverlay.height && personOverlay.partner_status && " · "}
+                    {personOverlay.partner_status && (
+                      <span>Partner: {personOverlay.partner_status}</span>
+                    )}
+                  </p>
+                )}
               </div>
             </div>
             {personOverlay.biography && (
               <div className="overlay-person-bio">
-                <FormatBoldText text={personOverlay.biography} />
+                <FormatBoldText text={personOverlay.biography} asParagraphs />
               </div>
             )}
             {(personOverlay.height || personOverlay.partner_status || personOverlay.children) && (

@@ -102,8 +102,8 @@ export async function getPersonDetails(
   knownFor?: string | null
 ): Promise<PersonDetails> {
   return invoke("get_person_details", {
-    person_id: personId,
-    known_for: knownFor ?? null,
+    personId,
+    knownFor: knownFor ?? null,
   });
 }
 
@@ -114,8 +114,8 @@ export async function getMediaExtendedInfo(
   year?: string | null
 ): Promise<MediaExtendedInfo> {
   return invoke("get_media_extended_info", {
-    tmdb_id: tmdbId,
-    media_type: mediaType,
+    tmdbId,
+    mediaType,
     title: title ?? null,
     year: year ?? null,
   });
@@ -128,10 +128,10 @@ export async function getActorMovieSuggestions(
   directorIds?: number[]
 ): Promise<ActorMovieSuggestion[]> {
   return invoke("get_actor_movie_suggestions", {
-    tmdb_id: tmdbId,
-    media_type: mediaType,
-    actor_ids: actorIds,
-    director_ids: directorIds ?? [],
+    tmdbId,
+    mediaType,
+    actorIds,
+    directorIds: directorIds ?? [],
   });
 }
 
