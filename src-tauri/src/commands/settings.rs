@@ -1,5 +1,7 @@
 use crate::db::DbPool;
+use crate::services::discovery;
 use crate::services::metadata_service::MetadataService;
+use crate::services::perplexity;
 use crate::services::quickconnect;
 use crate::services::storage;
 use std::collections::HashMap;
@@ -36,6 +38,71 @@ pub async fn load_settings(pool: State<'_, DbPool>) -> Result<HashMap<String, St
     storage::load_all_settings(&pool).await
 }
 
+#[tauri::command]
+pub async fn check_api_configuration_status(
+    pool: State<'_, DbPool>,
+    tmdb_api_key: Option<String>,
+    perplexity_api_key: Option<String>,
+) -> Result<ApiConfigurationStatus, String> {
+    let settings = storage::load_all_settings(&pool).await?;
+
+    let effective_tmdb_key = tmdb_api_key
+        .or_else(|| settings.get("tmdb_api_key").cloned())
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let effective_perplexity_key = perplexity_api_key
+        .or_else(|| settings.get("perplexity_api_key").cloned())
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+
+    let tmdb = if effective_tmdb_key.is_empty() {
+        ApiServiceStatus {
+            configured: false,
+            connected: false,
+            message: "Kein API-Key gesetzt.".to_string(),
+        }
+    } else {
+        match discovery::get_tmdb_genres(&effective_tmdb_key).await {
+            Ok(genres) => ApiServiceStatus {
+                configured: true,
+                connected: true,
+                message: format!("Verbindung ok ({} Genres geladen).", genres.len()),
+            },
+            Err(err) => ApiServiceStatus {
+                configured: true,
+                connected: false,
+                message: format!("Verbindung fehlgeschlagen: {}", err),
+            },
+        }
+    };
+
+    let perplexity = if effective_perplexity_key.is_empty() {
+        ApiServiceStatus {
+            configured: false,
+            connected: false,
+            message: "Kein API-Key gesetzt.".to_string(),
+        }
+    } else {
+        let probe_titles = vec!["Inception (2010)".to_string()];
+        match perplexity::classify_media_titles(&effective_perplexity_key, &probe_titles).await {
+            Ok(_) => ApiServiceStatus {
+                configured: true,
+                connected: true,
+                message: "Verbindung ok.".to_string(),
+            },
+            Err(err) => ApiServiceStatus {
+                configured: true,
+                connected: false,
+                message: format!("Verbindung fehlgeschlagen: {}", err),
+            },
+        }
+    };
+
+    Ok(ApiConfigurationStatus { tmdb, perplexity })
+}
+
 /// Diagnose: Listet /Volumes und prüft einen Pfad. Hilft bei Zugriffsproblemen.
 #[tauri::command]
 pub async fn diagnose_path(path: String) -> Result<DiagnoseResult, String> {
@@ -66,4 +133,17 @@ pub struct DiagnoseResult {
     pub path_checked: String,
     pub path_exists: bool,
     pub path_is_dir: bool,
+}
+
+#[derive(serde::Serialize)]
+pub struct ApiConfigurationStatus {
+    pub tmdb: ApiServiceStatus,
+    pub perplexity: ApiServiceStatus,
+}
+
+#[derive(serde::Serialize)]
+pub struct ApiServiceStatus {
+    pub configured: bool,
+    pub connected: bool,
+    pub message: String,
 }

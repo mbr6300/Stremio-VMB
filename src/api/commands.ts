@@ -17,6 +17,7 @@ import type {
   UnrestrictedLink,
   RdUserInfo,
   RdStatusInfo,
+  ApiConfigurationStatus,
   ExternalPlayer,
   Settings,
   MusicAlbum,
@@ -74,6 +75,16 @@ export async function checkQuickConnect(
   quickconnectId: string
 ): Promise<QuickConnectStatus> {
   return invoke("check_quickconnect", { quickconnectId: quickconnectId.trim() });
+}
+
+export async function checkApiConfigurationStatus(
+  tmdbApiKey?: string | null,
+  perplexityApiKey?: string | null
+): Promise<ApiConfigurationStatus> {
+  return invoke("check_api_configuration_status", {
+    tmdbApiKey: tmdbApiKey ?? null,
+    perplexityApiKey: perplexityApiKey ?? null,
+  });
 }
 
 export interface DiagnoseResult {

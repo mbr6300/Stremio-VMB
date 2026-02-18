@@ -4,9 +4,10 @@ import { useNavigate } from "react-router-dom";
 interface MediaCardProps {
   item: MediaItem;
   metadata?: MediaMetadata | null;
+  versionCount?: number;
 }
 
-export default function MediaCard({ item, metadata }: MediaCardProps) {
+export default function MediaCard({ item, metadata, versionCount = 1 }: MediaCardProps) {
   const navigate = useNavigate();
   const posterUrl = metadata?.poster_url;
   const displayTitle = metadata?.title || item.title;
@@ -31,6 +32,9 @@ export default function MediaCard({ item, metadata }: MediaCardProps) {
         {year && <span className="media-year">{year}</span>}
         {metadata?.rating != null && (
           <span className="media-rating">★ {metadata.rating.toFixed(1)}</span>
+        )}
+        {versionCount > 1 && (
+          <span className="media-versions">{versionCount} Versionen</span>
         )}
       </div>
     </div>

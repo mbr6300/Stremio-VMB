@@ -1,4 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
+import { isTauri } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   getDiscoverLists,
   refreshDiscoverLists,
@@ -8,6 +10,7 @@ import {
   openInPlayer,
 } from "../api/commands";
 import DiscoverCard from "../components/DiscoverCard";
+import { FullscreenExitIcon, FullscreenIcon } from "../components/NavIcons";
 import type { DiscoverList, DebridSearchResult, ExternalPlayer } from "../types";
 
 const DISCOVER_COUNTRIES = ["CH", "DE", "US", "UK"] as const;
@@ -34,6 +37,7 @@ export default function Discover() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedCountry, setSelectedCountry] = useState<string>("CH");
+  const [openCountryMenuFor, setOpenCountryMenuFor] = useState<string | null>(null);
 
   const [aiPreset, setAiPreset] = useState<string>("my_taste");
   const [aiList, setAiList] = useState<DiscoverList | null>(null);
@@ -45,10 +49,34 @@ export default function Discover() {
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
   const [players, setPlayers] = useState<ExternalPlayer[]>([]);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     loadLists();
     detectPlayers().then(setPlayers).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (isTauri()) {
+      getCurrentWindow().isFullscreen().then(setIsFullscreen).catch(() => {});
+      const unlisten = getCurrentWindow().onResized(() => {
+        getCurrentWindow().isFullscreen().then(setIsFullscreen).catch(() => {});
+      });
+      return () => { unlisten.then((fn) => fn()); };
+    }
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
+  }, []);
+
+  useEffect(() => {
+    function onDocumentClick(e: MouseEvent) {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest(".discover-country-picker")) return;
+      setOpenCountryMenuFor(null);
+    }
+    document.addEventListener("mousedown", onDocumentClick);
+    return () => document.removeEventListener("mousedown", onDocumentClick);
   }, []);
 
   useEffect(() => {
@@ -110,6 +138,7 @@ export default function Discover() {
 
   function handleCountrySelect(country: string) {
     setSelectedCountry(country);
+    setOpenCountryMenuFor(null);
     handleRefresh(country);
   }
 
@@ -133,6 +162,27 @@ export default function Discover() {
     }
   }
 
+  async function toggleFullscreen() {
+    if (isTauri()) {
+      try {
+        const win = getCurrentWindow();
+        const next = !(await win.isFullscreen());
+        await win.setFullscreen(next);
+        setIsFullscreen(next);
+      } catch (err) {
+        console.error("Fullscreen toggle failed:", err);
+      }
+      return;
+    }
+    if (!document.fullscreenElement) {
+      await document.documentElement.requestFullscreen();
+      setIsFullscreen(true);
+    } else {
+      await document.exitFullscreen();
+      setIsFullscreen(false);
+    }
+  }
+
   return (
     <div className="view-discover">
       <header className="view-header">
@@ -142,26 +192,46 @@ export default function Discover() {
             {viewMode === "empfehlungen" ? (
               <>
                 <button
-                  className="btn-secondary"
+                  className="btn-secondary discover-action-btn"
                   onClick={() => setViewMode("suche")}
                 >
                   Suche
                 </button>
                 <button
-                  className="btn-secondary"
+                  className="btn-secondary discover-action-btn"
                   onClick={() => handleRefresh()}
                   disabled={refreshing}
                 >
                   {refreshing ? "Aktualisiere…" : "Aktualisieren"}
                 </button>
+                <button
+                  type="button"
+                  className="btn-secondary btn-icon discover-action-btn discover-action-icon"
+                  onClick={toggleFullscreen}
+                  title={isFullscreen ? "Vollbild beenden" : "Vollbild"}
+                  aria-label={isFullscreen ? "Vollbild beenden" : "Vollbild"}
+                >
+                  {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
+                </button>
               </>
             ) : (
-              <button
-                className="btn-secondary"
-                onClick={() => setViewMode("empfehlungen")}
-              >
-                Empfehlungen
-              </button>
+              <>
+                <button
+                  className="btn-secondary discover-action-btn"
+                  onClick={() => setViewMode("empfehlungen")}
+                >
+                  Empfehlungen
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary btn-icon discover-action-btn discover-action-icon"
+                  onClick={toggleFullscreen}
+                  title={isFullscreen ? "Vollbild beenden" : "Vollbild"}
+                  aria-label={isFullscreen ? "Vollbild beenden" : "Vollbild"}
+                >
+                  {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -169,22 +239,6 @@ export default function Discover() {
 
       {viewMode === "empfehlungen" ? (
         <>
-          <div className="discover-header-with-countries">
-            <h2 className="discover-section-main-title">Empfehlungen</h2>
-            <div className="discover-country-tabs">
-              {DISCOVER_COUNTRIES.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  className={`discover-country-tab ${selectedCountry === c ? "active" : ""}`}
-                  onClick={() => handleCountrySelect(c)}
-                  disabled={refreshing}
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
-          </div>
           {loading && lists.length === 0 ? (
             <div className="loading-state">Lade Empfehlungen…</div>
           ) : lists.length === 0 ? (
@@ -209,7 +263,7 @@ export default function Discover() {
                         <button
                           key={p.id}
                           type="button"
-                          className={`discover-country-tab ${aiPreset === p.id ? "active" : ""}`}
+                          className={`discover-country-tab discover-preset-chip ${aiPreset === p.id ? "active" : ""}`}
                           onClick={() => setAiPreset(p.id)}
                           disabled={aiLoading}
                         >
@@ -265,7 +319,17 @@ export default function Discover() {
                 ) : null}
               </section>
               {lists.map((list) => (
-                <DiscoverSection key={list.id} list={list} />
+                <DiscoverSection
+                  key={list.id}
+                  list={list}
+                  selectedCountry={selectedCountry}
+                  refreshing={refreshing}
+                  isCountryMenuOpen={openCountryMenuFor === list.id}
+                  onToggleCountryMenu={() =>
+                    setOpenCountryMenuFor((prev) => (prev === list.id ? null : list.id))
+                  }
+                  onSelectCountry={handleCountrySelect}
+                />
               ))}
             </div>
           )}
@@ -280,7 +344,7 @@ export default function Discover() {
           <div className="search-controls">
             <input
               type="text"
-              className="search-input search-input-wide"
+              className="search-input search-input-wide discover-search-input"
               placeholder="z.B. Inception, Breaking Bad…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -301,7 +365,7 @@ export default function Discover() {
               </button>
             </div>
             <button
-              className="btn-primary"
+              className="btn-primary discover-search-btn"
               onClick={handleDebridSearch}
               disabled={searching || !searchQuery.trim()}
             >
@@ -375,7 +439,21 @@ export default function Discover() {
   );
 }
 
-function DiscoverSection({ list }: { list: DiscoverList }) {
+function DiscoverSection({
+  list,
+  selectedCountry,
+  refreshing,
+  isCountryMenuOpen,
+  onToggleCountryMenu,
+  onSelectCountry,
+}: {
+  list: DiscoverList;
+  selectedCountry: string;
+  refreshing: boolean;
+  isCountryMenuOpen: boolean;
+  onToggleCountryMenu: () => void;
+  onSelectCountry: (country: string) => void;
+}) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   function scroll(direction: "left" | "right") {
@@ -397,9 +475,35 @@ function DiscoverSection({ list }: { list: DiscoverList }) {
         <h2>
           {sectionIcon}
           {list.title}
-          {list.country && (
-            <span className="discover-country">{list.country}</span>
-          )}
+          <span className="discover-country-picker">
+            <button
+              type="button"
+              className="discover-country-trigger"
+              onClick={onToggleCountryMenu}
+              disabled={refreshing}
+              aria-haspopup="menu"
+              aria-expanded={isCountryMenuOpen}
+              title="Land wechseln"
+            >
+              {selectedCountry}
+            </button>
+            {isCountryMenuOpen && (
+              <div className="discover-country-menu" role="menu">
+                {DISCOVER_COUNTRIES.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    role="menuitem"
+                    className={`discover-country-menu-item ${selectedCountry === c ? "active" : ""}`}
+                    onClick={() => onSelectCountry(c)}
+                    disabled={refreshing}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+            )}
+          </span>
         </h2>
       </div>
       <div className="discover-section-row discover-carousel-container">

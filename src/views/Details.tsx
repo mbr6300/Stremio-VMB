@@ -12,6 +12,8 @@ import {
   getActorMovieSuggestions,
 } from "../api/commands";
 import FormatBoldText from "../components/FormatBoldText";
+import { useLibrary } from "../context/LibraryContext";
+import { buildMovieGroups } from "../utils/libraryGrouping";
 import type {
   MediaItem,
   MediaMetadata,
@@ -26,6 +28,7 @@ import type {
 export default function Details() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { items: libraryItems } = useLibrary();
   const [item, setItem] = useState<MediaItem | null>(null);
   const [metadata, setMetadata] = useState<MediaMetadata | null>(null);
   const [loading, setLoading] = useState(true);
@@ -36,6 +39,7 @@ export default function Details() {
   const [extendedOverlay, setExtendedOverlay] = useState<MediaExtendedInfo | null>(null);
   const [extendedLoading, setExtendedLoading] = useState(false);
   const [actorSuggestions, setActorSuggestions] = useState<ActorMovieSuggestion[]>([]);
+  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
   const personCacheRef = useRef<Map<number, PersonDetails>>(new Map());
   const extendedInfoRef = useRef<MediaExtendedInfo | null>(null);
   const preloadTmdbIdRef = useRef<number | null>(null);
@@ -196,6 +200,40 @@ export default function Details() {
     }
   }
 
+  const movieVariants = useMemo(() => {
+    if (!item || item.media_type !== "movie") {
+      return item ? [{ item, metadata }] : [];
+    }
+    const groups = buildMovieGroups(libraryItems);
+    const match = groups.find((group) => group.entries.some((entry) => entry.item.id === item.id));
+    if (match) return match.entries;
+    return [{ item, metadata }];
+  }, [libraryItems, item, metadata]);
+
+  useEffect(() => {
+    if (movieVariants.length === 0) {
+      setSelectedVariantId(null);
+      return;
+    }
+    const hasSelected = selectedVariantId != null
+      && movieVariants.some((entry) => entry.item.id === selectedVariantId);
+    if (hasSelected) return;
+    const preferred = item ? movieVariants.find((entry) => entry.item.id === item.id) : null;
+    if (preferred) {
+      setSelectedVariantId(preferred.item.id);
+      return;
+    }
+    const fallback = [...movieVariants].sort(
+      (a, b) => (b.item.file_size ?? 0) - (a.item.file_size ?? 0)
+    )[0];
+    setSelectedVariantId(fallback.item.id);
+  }, [item, movieVariants, selectedVariantId]);
+
+  const selectedVariant = useMemo(() => {
+    if (movieVariants.length === 0) return null;
+    return movieVariants.find((entry) => entry.item.id === selectedVariantId) ?? movieVariants[0];
+  }, [movieVariants, selectedVariantId]);
+
   if (loading) return <div className="loading-state">Lade Details...</div>;
   if (!item) return <div className="empty-state">Medium nicht gefunden.</div>;
 
@@ -207,6 +245,18 @@ export default function Details() {
     const h = Math.floor(minutes / 60);
     const m = minutes % 60;
     return h > 0 ? `${h} Std. ${m} Min.` : `${m} Min.`;
+  }
+
+  function formatFileSize(bytes: number | null): string | null {
+    if (!bytes || bytes <= 0) return null;
+    return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+  }
+
+  function detectQualityLabel(entry: MediaItem): string {
+    const source = `${entry.title} ${entry.file_path}`.toLowerCase();
+    const qualityMatch = source.match(/\b(2160p|1080p|720p|480p|4k|8k|uhd)\b/i);
+    if (qualityMatch?.[1]) return qualityMatch[1].toUpperCase();
+    return "Standard";
   }
 
   return (
@@ -355,10 +405,36 @@ export default function Details() {
               </div>
             )}
 
+            {movieVariants.length > 1 && (
+              <div className="details-variants">
+                <h3>Dateiversion wählen ({movieVariants.length})</h3>
+                <div className="variant-list">
+                  {movieVariants
+                    .slice()
+                    .sort((a, b) => (b.item.file_size ?? 0) - (a.item.file_size ?? 0))
+                    .map((entry, index) => (
+                      <button
+                        key={entry.item.id}
+                        type="button"
+                        className={`variant-btn ${selectedVariant?.item.id === entry.item.id ? "active" : ""}`}
+                        onClick={() => setSelectedVariantId(entry.item.id)}
+                      >
+                        <span className="variant-main">
+                          {detectQualityLabel(entry.item)} · Datei {index + 1}
+                        </span>
+                        {formatFileSize(entry.item.file_size) && (
+                          <span className="variant-size">{formatFileSize(entry.item.file_size)}</span>
+                        )}
+                      </button>
+                    ))}
+                </div>
+              </div>
+            )}
+
             <div className="details-actions">
               <button
                 className="btn-primary"
-                onClick={() => navigate(`/player/${item.id}`)}
+                onClick={() => navigate(`/player/${selectedVariant?.item.id ?? item.id}`)}
               >
                 ▶ Abspielen
               </button>
@@ -384,7 +460,9 @@ export default function Details() {
               {players.length > 0 && (
                 <button
                   className="btn-secondary"
-                  onClick={() => openInPlayer(players[0].id, item.file_path)}
+                  onClick={() =>
+                    openInPlayer(players[0].id, selectedVariant?.item.file_path ?? item.file_path)
+                  }
                 >
                   In {players[0].name} öffnen
                 </button>
@@ -392,11 +470,9 @@ export default function Details() {
             </div>
 
             <div className="details-file-info">
-              <small>Pfad: {item.file_path}</small>
-              {item.file_size && (
-                <small>
-                  Größe: {(item.file_size / 1024 / 1024 / 1024).toFixed(2)} GB
-                </small>
+              <small>Pfad: {selectedVariant?.item.file_path ?? item.file_path}</small>
+              {selectedVariant?.item.file_size && (
+                <small>Größe: {(selectedVariant.item.file_size / 1024 / 1024 / 1024).toFixed(2)} GB</small>
               )}
             </div>
           </div>

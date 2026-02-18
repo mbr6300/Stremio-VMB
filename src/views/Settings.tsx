@@ -7,6 +7,7 @@ import {
   checkMediaPath,
   checkMusicPath,
   checkQuickConnect,
+  checkApiConfigurationStatus,
   diagnosePath,
   scanMediaDirsProgressive,
   scanMusicDirsProgressive,
@@ -17,7 +18,56 @@ import {
   rdGetStatus,
 } from "../api/commands";
 import { useScan } from "../context/ScanContext";
-import type { Settings, PathCheckResult, RdStatusInfo } from "../types";
+import type {
+  Settings,
+  PathCheckResult,
+  RdStatusInfo,
+  ApiConfigurationStatus,
+  ApiServiceStatus,
+} from "../types";
+
+function ApiStatusLine({ label, status }: { label: string; status: ApiServiceStatus }) {
+  const badgeClass = status.connected
+    ? "rd-status-badge connected"
+    : status.configured
+      ? "rd-status-badge expired"
+      : "rd-status-badge";
+
+  const badgeText = status.connected
+    ? "Verbunden"
+    : status.configured
+      ? "Nicht erreichbar"
+      : "Nicht konfiguriert";
+
+  return (
+    <div className="api-status-item">
+      <span className={badgeClass}>{label}: {badgeText}</span>
+      <p className="api-status-message">{status.message}</p>
+    </div>
+  );
+}
+
+function buildUncheckedApiStatus(s: Settings): ApiConfigurationStatus {
+  const tmdbConfigured = !!(s["tmdb_api_key"] ?? "").trim();
+  const perplexityConfigured = !!(s["perplexity_api_key"] ?? "").trim();
+
+  return {
+    tmdb: {
+      configured: tmdbConfigured,
+      connected: false,
+      message: tmdbConfigured
+        ? "Noch nicht geprüft. Auf \"TMDb-Verbindung prüfen\" klicken."
+        : "Kein API-Key gesetzt.",
+    },
+    perplexity: {
+      configured: perplexityConfigured,
+      connected: false,
+      message: perplexityConfigured
+        ? "Noch nicht geprüft. Auf \"Perplexity-Verbindung prüfen\" klicken."
+        : "Kein API-Key gesetzt.",
+    },
+  };
+}
 
 export default function SettingsView() {
   const { isScanning, setScanning, isFetchingMetadata, setFetchingMetadata } = useScan();
@@ -36,6 +86,9 @@ export default function SettingsView() {
   const [rdUrl, setRdUrl] = useState<string>("");
   const [rdPolling, setRdPolling] = useState(false);
   const [rdApiKeyInput, setRdApiKeyInput] = useState("");
+  const [apiStatus, setApiStatus] = useState<ApiConfigurationStatus | null>(null);
+  const [checkingTmdbStatus, setCheckingTmdbStatus] = useState(false);
+  const [checkingPerplexityStatus, setCheckingPerplexityStatus] = useState(false);
   const [qcStatus, setQcStatus] = useState<{
     connected: boolean;
     message: string;
@@ -69,6 +122,7 @@ export default function SettingsView() {
       ]);
       setSettings(s);
       setRdStatus(rdStatusRes);
+      setApiStatus(buildUncheckedApiStatus(s));
       const paths = parsePaths(s["media_paths"]);
       if (paths.length > 0 && !pathInput) setPathInput(paths[0]);
       const musicPaths = parsePaths(s["music_paths"]);
@@ -190,7 +244,7 @@ export default function SettingsView() {
     try {
       const result = await diagnosePath(path);
       setDiagnoseResult(result);
-    } catch (err) {
+    } catch {
       setDiagnoseResult({
         volumes: [],
         path_checked: path,
@@ -277,6 +331,58 @@ export default function SettingsView() {
       });
     } finally {
       setCheckingQc(false);
+    }
+  }
+
+  async function handleCheckTmdbStatus() {
+    try {
+      setCheckingTmdbStatus(true);
+      const status = await checkApiConfigurationStatus(
+        settings["tmdb_api_key"] ?? "",
+        null
+      );
+      setApiStatus((prev) => ({
+        ...(prev ?? buildUncheckedApiStatus(settings)),
+        tmdb: status.tmdb,
+      }));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setApiStatus((prev) => ({
+        ...(prev ?? buildUncheckedApiStatus(settings)),
+        tmdb: {
+          configured: !!(settings["tmdb_api_key"] ?? "").trim(),
+          connected: false,
+          message: `Statusprüfung fehlgeschlagen: ${message}`,
+        },
+      }));
+    } finally {
+      setCheckingTmdbStatus(false);
+    }
+  }
+
+  async function handleCheckPerplexityStatus() {
+    try {
+      setCheckingPerplexityStatus(true);
+      const status = await checkApiConfigurationStatus(
+        null,
+        settings["perplexity_api_key"] ?? ""
+      );
+      setApiStatus((prev) => ({
+        ...(prev ?? buildUncheckedApiStatus(settings)),
+        perplexity: status.perplexity,
+      }));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setApiStatus((prev) => ({
+        ...(prev ?? buildUncheckedApiStatus(settings)),
+        perplexity: {
+          configured: !!(settings["perplexity_api_key"] ?? "").trim(),
+          connected: false,
+          message: `Statusprüfung fehlgeschlagen: ${message}`,
+        },
+      }));
+    } finally {
+      setCheckingPerplexityStatus(false);
     }
   }
 
@@ -660,6 +766,14 @@ export default function SettingsView() {
           <button
             type="button"
             className="btn-secondary"
+            onClick={handleCheckTmdbStatus}
+            disabled={checkingTmdbStatus}
+          >
+            {checkingTmdbStatus ? "Prüfe…" : "TMDb-Verbindung prüfen"}
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
             onClick={async () => {
               try {
                 setFetchingMetadata(true);
@@ -676,6 +790,11 @@ export default function SettingsView() {
             {isFetchingMetadata ? "Lade…" : "Metadaten für Bibliothek laden"}
           </button>
         </div>
+        {apiStatus && (
+          <div className="api-status-panel">
+            <ApiStatusLine label="TMDb" status={apiStatus.tmdb} />
+          </div>
+        )}
       </section>
 
       <section className="settings-section">
@@ -721,6 +840,21 @@ export default function SettingsView() {
             placeholder="API-Key"
           />
         </div>
+        <div className="action-row" style={{ marginTop: 12 }}>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={handleCheckPerplexityStatus}
+            disabled={checkingPerplexityStatus}
+          >
+            {checkingPerplexityStatus ? "Prüfe…" : "Perplexity-Verbindung prüfen"}
+          </button>
+        </div>
+        {apiStatus && (
+          <div className="api-status-panel">
+            <ApiStatusLine label="Perplexity" status={apiStatus.perplexity} />
+          </div>
+        )}
       </section>
 
       <section className="settings-section">

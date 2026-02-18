@@ -109,6 +109,17 @@ export interface RdStatusInfo {
   user: RdUserInfo | null;
 }
 
+export interface ApiServiceStatus {
+  configured: boolean;
+  connected: boolean;
+  message: string;
+}
+
+export interface ApiConfigurationStatus {
+  tmdb: ApiServiceStatus;
+  perplexity: ApiServiceStatus;
+}
+
 export interface DeviceCodeResponse {
   device_code: string;
   user_code: string;
@@ -199,6 +210,12 @@ export interface Settings {
 export interface LibraryItemWithMeta {
   item: MediaItem;
   metadata: MediaMetadata | null;
+}
+
+export interface MovieGroup {
+  key: string;
+  representative: LibraryItemWithMeta;
+  entries: LibraryItemWithMeta[];
 }
 
 export interface SeriesCluster {

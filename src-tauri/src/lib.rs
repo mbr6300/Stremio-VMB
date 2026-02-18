@@ -58,6 +58,7 @@ pub fn run() {
             commands::settings::save_settings,
             commands::settings::load_settings,
             commands::settings::check_quickconnect,
+            commands::settings::check_api_configuration_status,
             commands::settings::diagnose_path,
             commands::realdebrid::rd_get_device_code,
             commands::realdebrid::rd_poll_credentials,

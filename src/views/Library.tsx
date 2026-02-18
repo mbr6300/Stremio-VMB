@@ -4,24 +4,25 @@ import MediaCard from "../components/MediaCard";
 import { useLibrary } from "../context/LibraryContext";
 import { useScan } from "../context/ScanContext";
 import { extractSeriesName, parseEpisodeInfo, slugify } from "../utils/series";
+import { buildMovieGroups } from "../utils/libraryGrouping";
 import { fetchMetadataBatch, improveClassificationsWithPerplexity } from "../api/commands";
-import type { LibraryItemWithMeta, SeriesCluster } from "../types";
+import type { LibraryItemWithMeta, MovieGroup, SeriesCluster } from "../types";
 
 type FilterType = "all" | "movie" | "series";
 type SortType = "title" | "year" | "rating" | "genre";
 
 function buildClusters(items: LibraryItemWithMeta[]): {
-  movies: LibraryItemWithMeta[];
+  movies: MovieGroup[];
   series: SeriesCluster[];
 } {
-  const movies: LibraryItemWithMeta[] = [];
+  const rawMovies: LibraryItemWithMeta[] = [];
   const seriesMap = new Map<string, LibraryItemWithMeta[]>();
 
   for (const entry of items) {
     const isSeries =
       entry.item.media_type === "series" || parseEpisodeInfo(entry.item.title) !== null;
     if (!isSeries) {
-      movies.push(entry);
+      rawMovies.push(entry);
     } else {
       const seriesName =
         entry.item.series_name?.trim() ||
@@ -49,6 +50,7 @@ function buildClusters(items: LibraryItemWithMeta[]): {
     }
   );
 
+  const movies = buildMovieGroups(rawMovies);
   return { movies, series };
 }
 
@@ -79,11 +81,11 @@ export default function Library() {
 
   const filteredMovies = useMemo(() => {
     const result = movies.filter((m) => {
-      const title = m.metadata?.title || m.item.title;
+      const title = m.representative.metadata?.title || m.representative.item.title;
       if (search && !title.toLowerCase().includes(search.toLowerCase()))
         return false;
       if (genreFilter) {
-        const g = m.metadata?.genres;
+        const g = m.representative.metadata?.genres;
         if (!g) return false;
         try {
           const arr = JSON.parse(g) as string[];
@@ -94,13 +96,16 @@ export default function Library() {
       }
       return true;
     });
-    const getYear = (d: LibraryItemWithMeta) =>
-      d.metadata?.release_date ? parseInt(d.metadata.release_date.slice(0, 4), 10) : 0;
-    const getTitle = (d: LibraryItemWithMeta) => d.metadata?.title || d.item.title;
-    const getFirstGenre = (d: LibraryItemWithMeta) => {
-      if (!d.metadata?.genres) return "";
+    const getYear = (d: MovieGroup) =>
+      d.representative.metadata?.release_date
+        ? parseInt(d.representative.metadata.release_date.slice(0, 4), 10)
+        : 0;
+    const getTitle = (d: MovieGroup) =>
+      d.representative.metadata?.title || d.representative.item.title;
+    const getFirstGenre = (d: MovieGroup) => {
+      if (!d.representative.metadata?.genres) return "";
       try {
-        const arr = JSON.parse(d.metadata.genres) as string[];
+        const arr = JSON.parse(d.representative.metadata.genres) as string[];
         return arr[0] ?? "";
       } catch {
         return "";
@@ -111,7 +116,7 @@ export default function Library() {
         case "year":
           return getYear(b) - getYear(a);
         case "rating":
-          return (b.metadata?.rating ?? 0) - (a.metadata?.rating ?? 0) > 0 ? 1 : -1;
+          return (b.representative.metadata?.rating ?? 0) - (a.representative.metadata?.rating ?? 0) > 0 ? 1 : -1;
         case "genre":
           return getFirstGenre(a).localeCompare(getFirstGenre(b)) || getTitle(a).localeCompare(getTitle(b));
         default:
@@ -292,9 +297,10 @@ export default function Library() {
               <div className="media-grid">
                 {filteredMovies.map((m) => (
                   <MediaCard
-                    key={m.item.id}
-                    item={m.item}
-                    metadata={m.metadata}
+                    key={m.key}
+                    item={m.representative.item}
+                    metadata={m.representative.metadata}
+                    versionCount={m.entries.length}
                   />
                 ))}
               </div>
