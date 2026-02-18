@@ -64,6 +64,29 @@ export async function loadSettings(): Promise<Settings> {
   return invoke("load_settings");
 }
 
+export interface QuickConnectStatus {
+  connected: boolean;
+  message: string;
+  server_url: string | null;
+}
+
+export async function checkQuickConnect(
+  quickconnectId: string
+): Promise<QuickConnectStatus> {
+  return invoke("check_quickconnect", { quickconnectId: quickconnectId.trim() });
+}
+
+export interface DiagnoseResult {
+  volumes: string[];
+  path_checked: string;
+  path_exists: boolean;
+  path_is_dir: boolean;
+}
+
+export async function diagnosePath(path: string): Promise<DiagnoseResult> {
+  return invoke("diagnose_path", { path: path.trim() });
+}
+
 export async function fetchMetadata(
   mediaItemId: string,
   year?: number

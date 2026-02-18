@@ -112,7 +112,7 @@ export default function Details() {
     getActorMovieSuggestions(metadata.tmdb_id, item.media_type, ids, [])
       .then(setActorSuggestions)
       .catch(() => setActorSuggestions([]));
-  }, [metadata?.tmdb_id, castCrew?.cast, item?.media_type]);
+  }, [metadata?.tmdb_id, castCrew?.cast, item]);
 
   useEffect(() => {
     if (!metadata?.tmdb_id || !item) return;
@@ -148,7 +148,7 @@ export default function Details() {
         })
         .catch(() => {});
     });
-  }, [metadata?.tmdb_id, metadata?.title, metadata?.release_date, item?.media_type, item?.title, castCrew?.cast]);
+  }, [metadata?.tmdb_id, metadata?.title, metadata?.release_date, item, castCrew?.cast]);
 
   async function handleActorClick(member: CastMember) {
     if (member.id == null) return;

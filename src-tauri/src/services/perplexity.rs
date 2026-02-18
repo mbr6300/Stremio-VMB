@@ -221,10 +221,11 @@ pub async fn get_person_anecdotes(
         .unwrap_or_default();
 
     let prompt = format!(
-        r#"Gib zu dieser Person kurze, interessante Infos auf Deutsch: {}
-{}Antworte NUR mit einem JSON-Objekt (kein Markdown):
-{{"anecdotes": ["Anekdote 1", "Anekdote 2", ...], "height": "1.85 m" oder null, "partner_status": "Verheiratet mit X" oder null, "children": "2 Kinder" oder null}}
-Maximal 5 Anekdoten, jeweils 1-2 Sätze. Wenn keine Infos: leeres anecdotes-Array."#,
+        r#"Gib zu dieser Person kurze Infos auf Deutsch: {}
+{}
+Antworte NUR mit einem JSON-Objekt (kein Markdown, kein Text davor/danach):
+{{"anecdotes": ["Anekdote 1", "Anekdote 2"], "height": "1.85 m", "partner_status": "Verheiratet mit Name", "children": "2 Kinder"}}
+WICHTIG: Gib immer "height" (Körpergröße in m, z.B. "1.78 m") und "partner_status" (Beziehung/Partner, z.B. "Verheiratet mit X" oder "Ledig") an – auch wenn unsicher, schätze. Maximal 5 Anekdoten. Fehlende Felder als null."#,
         person_name, context
     );
 
@@ -273,9 +274,13 @@ Maximal 5 Anekdoten, jeweils 1-2 Sätze. Wenn keine Infos: leeres anecdotes-Arra
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PersonAnecdotes {
+    #[serde(default)]
     pub anecdotes: Vec<String>,
+    #[serde(default, alias = "Größe")]
     pub height: Option<String>,
+    #[serde(default, alias = "Beziehungsstatus")]
     pub partner_status: Option<String>,
+    #[serde(default, alias = "Kinder")]
     pub children: Option<String>,
 }
 

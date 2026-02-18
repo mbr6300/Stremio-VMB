@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -6,6 +6,8 @@ import {
   saveSettings,
   checkMediaPath,
   checkMusicPath,
+  checkQuickConnect,
+  diagnosePath,
   scanMediaDirsProgressive,
   scanMusicDirsProgressive,
   fetchMetadataBatch,
@@ -34,20 +36,31 @@ export default function SettingsView() {
   const [rdUrl, setRdUrl] = useState<string>("");
   const [rdPolling, setRdPolling] = useState(false);
   const [rdApiKeyInput, setRdApiKeyInput] = useState("");
+  const [qcStatus, setQcStatus] = useState<{
+    connected: boolean;
+    message: string;
+    server_url: string | null;
+  } | null>(null);
+  const [checkingQc, setCheckingQc] = useState(false);
+  const [diagnoseResult, setDiagnoseResult] = useState<{
+    volumes: string[];
+    path_checked: string;
+    path_exists: boolean;
+    path_is_dir: boolean;
+  } | null>(null);
+
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
 
   useEffect(() => {
-    load();
+    return () => {
+      saveSettings(settingsRef.current).catch((err) =>
+        console.error("Auto-save on leave failed:", err)
+      );
+    };
   }, []);
 
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    listen("music-scan-complete", () => setMusicScanning(false)).then(
-      (fn) => { unlisten = fn; }
-    );
-    return () => { unlisten?.(); };
-  }, []);
-
-  async function load() {
+  const load = useCallback(async () => {
     try {
       setLoading(true);
       const [s, rdStatusRes] = await Promise.all([
@@ -65,7 +78,20 @@ export default function SettingsView() {
     } finally {
       setLoading(false);
     }
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- pathInput/musicPathInput excluded: only set on initial load when empty
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen("music-scan-complete", () => setMusicScanning(false)).then(
+      (fn) => { unlisten = fn; }
+    );
+    return () => { unlisten?.(); };
+  }, []);
 
   function parsePaths(json: string | undefined): string[] {
     if (!json) return [];
@@ -116,6 +142,16 @@ export default function SettingsView() {
     setSettings({ ...settings, media_paths: JSON.stringify(paths) });
   }
 
+  function handleAddPathFromInput() {
+    const p = pathInput.trim();
+    if (!p) return;
+    const paths = getPaths();
+    if (!paths.includes(p)) {
+      paths.push(p);
+      setSettings({ ...settings, media_paths: JSON.stringify(paths) });
+    }
+  }
+
   async function handleAddMusicPath() {
     const selected = await open({
       directory: true,
@@ -136,13 +172,44 @@ export default function SettingsView() {
     setSettings({ ...settings, music_paths: JSON.stringify(paths) });
   }
 
+  function handleAddMusicPathFromInput() {
+    const p = musicPathInput.trim();
+    if (!p) return;
+    const paths = getMusicPaths();
+    if (!paths.includes(p)) {
+      paths.push(p);
+      setSettings({ ...settings, music_paths: JSON.stringify(paths) });
+    }
+  }
+
+  async function handleDiagnosePath(section: "media" | "music") {
+    const path = section === "media"
+      ? (pathInput.trim() || getPaths()[0])
+      : (musicPathInput.trim() || getMusicPaths()[0]);
+    if (!path) return;
+    try {
+      const result = await diagnosePath(path);
+      setDiagnoseResult(result);
+    } catch (err) {
+      setDiagnoseResult({
+        volumes: [],
+        path_checked: path,
+        path_exists: false,
+        path_is_dir: false,
+      });
+    }
+  }
+
   async function handleCheckPath() {
     const path = pathInput.trim() || getPaths()[0];
     if (!path) return;
+    setCheckingPath(true);
+    setPathCheck(null);
     try {
-      setCheckingPath(true);
-      setPathCheck(null);
-      const result = await checkMediaPath(path);
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Zeitüberschreitung (30 s). Pfad prüfen oder NAS-Verbindung prüfen.")), 30000)
+      );
+      const result = await Promise.race([checkMediaPath(path), timeout]);
       setPathCheck(result);
     } catch (err) {
       setPathCheck({
@@ -153,7 +220,7 @@ export default function SettingsView() {
         sample_files: [],
         sample_all: [],
         subdirs: [],
-        error: String(err),
+        error: err instanceof Error ? err.message : String(err),
       });
     } finally {
       setCheckingPath(false);
@@ -163,10 +230,13 @@ export default function SettingsView() {
   async function handleCheckMusicPath() {
     const path = musicPathInput.trim() || getMusicPaths()[0];
     if (!path) return;
+    setCheckingMusicPath(true);
+    setMusicPathCheck(null);
     try {
-      setCheckingMusicPath(true);
-      setMusicPathCheck(null);
-      const result = await checkMusicPath(path);
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Zeitüberschreitung (30 s). Pfad prüfen oder NAS-Verbindung prüfen.")), 30000)
+      );
+      const result = await Promise.race([checkMusicPath(path), timeout]);
       setMusicPathCheck(result);
     } catch (err) {
       setMusicPathCheck({
@@ -177,10 +247,36 @@ export default function SettingsView() {
         sample_files: [],
         sample_all: [],
         subdirs: [],
-        error: String(err),
+        error: err instanceof Error ? err.message : String(err),
       });
     } finally {
       setCheckingMusicPath(false);
+    }
+  }
+
+  async function handleCheckQuickConnect() {
+    const id = (settings["quickconnect_id"] ?? "").trim();
+    if (!id) {
+      setQcStatus({
+        connected: false,
+        message: "QuickConnect-ID eingeben.",
+        server_url: null,
+      });
+      return;
+    }
+    try {
+      setCheckingQc(true);
+      setQcStatus(null);
+      const result = await checkQuickConnect(id);
+      setQcStatus(result);
+    } catch (err) {
+      setQcStatus({
+        connected: false,
+        message: `Prüfung fehlgeschlagen: ${err}`,
+        server_url: null,
+      });
+    } finally {
+      setCheckingQc(false);
     }
   }
 
@@ -256,8 +352,16 @@ export default function SettingsView() {
         <h2>Medienpfade</h2>
         <p className="settings-hint">
           Ordner mit Filmen und Serien. NAS z.B. unter{" "}
-          <code>/Volumes/Diskstation/video</code>
+          <code>/Volumes/Diskstation/video</code>. Lokale Pfade werden bevorzugt;
+          für Remote-Zugriff QuickConnect konfigurieren und Share einbinden.
         </p>
+        {typeof navigator !== "undefined" && /Mac|Darwin/.test(navigator.platform) && (
+          <p className="settings-hint settings-hint-macos">
+            macOS: Wenn gemountete Pfade nicht gefunden werden, App unter{" "}
+            <strong>Systemeinstellungen → Datenschutz &amp; Sicherheit → Vollständiger Festplattenzugriff</strong>{" "}
+            hinzufügen und App neu starten.
+          </p>
+        )}
         <div className="path-list">
           {paths.map((p) => (
             <div key={p} className="path-item">
@@ -275,10 +379,19 @@ export default function SettingsView() {
         <div className="path-input-row">
           <input
             type="text"
-            placeholder="/Pfad/zum/Ordner"
+            placeholder="/Pfad/zum/Ordner oder /Volumes/NAS/video"
             value={pathInput}
             onChange={(e) => setPathInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleAddPathFromInput()}
           />
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={handleAddPathFromInput}
+            disabled={!pathInput.trim()}
+          >
+            Hinzufügen
+          </button>
           <button
             type="button"
             className="btn-secondary"
@@ -292,9 +405,17 @@ export default function SettingsView() {
             type="button"
             className="btn-secondary"
             onClick={handleCheckPath}
-            disabled={checkingPath || paths.length === 0}
+            disabled={checkingPath || (!pathInput.trim() && paths.length === 0)}
           >
             {checkingPath ? "Prüfe…" : "Prüfen"}
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => handleDiagnosePath("media")}
+            title="Zeigt, welche Volumes die App sieht"
+          >
+            Diagnose
           </button>
           <button
             type="button"
@@ -305,11 +426,24 @@ export default function SettingsView() {
             {isScanning ? "Scanne…" : "Bibliothek scannen"}
           </button>
         </div>
-        {pathCheck && (
+        {(checkingPath || pathCheck || diagnoseResult) && (
           <div className="scan-result">
-            {pathCheck.error ? (
+            {checkingPath ? (
+              <p>Prüfe Pfad…</p>
+            ) : diagnoseResult ? (
+              <>
+                <p><strong>Diagnose</strong></p>
+                <p>Volumes unter /Volumes: {diagnoseResult.volumes.join(", ") || "(keine)"}</p>
+                <p>Geprüfter Pfad: {diagnoseResult.path_checked}</p>
+                <p>Existiert: {diagnoseResult.path_exists ? "✓ Ja" : "✗ Nein"}</p>
+                <p>Ist Ordner: {diagnoseResult.path_is_dir ? "✓ Ja" : "✗ Nein"}</p>
+                <button type="button" className="btn-secondary btn-sm" onClick={() => setDiagnoseResult(null)}>
+                  Schließen
+                </button>
+              </>
+            ) : pathCheck?.error ? (
               <p className="status-warn">{pathCheck.error}</p>
-            ) : (
+            ) : pathCheck ? (
               <>
                 <p>
                   {pathCheck.exists
@@ -320,6 +454,69 @@ export default function SettingsView() {
                   <p>Unterordner: {pathCheck.subdirs.slice(0, 5).join(", ")}…</p>
                 )}
               </>
+            ) : null}
+          </div>
+        )}
+      </section>
+
+      <section className="settings-section">
+        <h2>Synology QuickConnect</h2>
+        <p className="settings-hint">
+          Für Remote-Zugriff auf Synology NAS. Lokale Pfade (z.B. /Volumes/Diskstation) werden
+          bevorzugt. Ohne lokalen Zugriff wird QuickConnect verwendet.
+        </p>
+        <p className="settings-hint">
+          Für Dateizugriff: NAS-Share im System mounten (SMB, Finder). Beim Mounten werden
+          Benutzername und Passwort abgefragt – die App nutzt dann den gemounteten Pfad.
+        </p>
+        <div className="setting-row">
+          <label>QuickConnect-ID</label>
+          <input
+            type="text"
+            value={settings["quickconnect_id"] ?? ""}
+            onChange={(e) =>
+              setSettings({ ...settings, quickconnect_id: e.target.value })
+            }
+            placeholder="z.B. mynas"
+          />
+        </div>
+        <div className="setting-row">
+          <label>Lokaler Hostname (optional)</label>
+          <input
+            type="text"
+            value={settings["quickconnect_local_host"] ?? ""}
+            onChange={(e) =>
+              setSettings({ ...settings, quickconnect_local_host: e.target.value })
+            }
+            placeholder="z.B. diskstation.local oder 192.168.1.100"
+          />
+        </div>
+        <div className="action-row">
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={handleCheckQuickConnect}
+            disabled={checkingQc}
+          >
+            {checkingQc ? "Prüfe…" : "Verbindung prüfen"}
+          </button>
+        </div>
+        {qcStatus && (
+          <div className={`qc-status ${qcStatus.connected ? "qc-connected" : "qc-disconnected"}`}>
+            <span className={`qc-status-badge ${qcStatus.connected ? "connected" : ""}`}>
+              {qcStatus.connected ? "Verbunden" : "Nicht erreichbar"}
+            </span>
+            <p className="qc-status-message">{qcStatus.message}</p>
+            {qcStatus.server_url && (
+              <p className="qc-status-url">
+                <a
+                  href={qcStatus.server_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {qcStatus.server_url}
+                </a>
+              </p>
             )}
           </div>
         )}
@@ -329,8 +526,15 @@ export default function SettingsView() {
         <h2>Musikpfade</h2>
         <p className="settings-hint">
           Ordner mit Musikdateien (MP3, FLAC, M4A, etc.). NAS z.B. unter{" "}
-          <code>/Volumes/Diskstation/music</code>
+          <code>/Volumes/Diskstation/music</code> (auf macOS: großes <strong>V</strong> in Volumes).
         </p>
+        {typeof navigator !== "undefined" && /Mac|Darwin/.test(navigator.platform) && (
+          <p className="settings-hint settings-hint-macos">
+            macOS: Wenn gemountete Pfade nicht gefunden werden, App unter{" "}
+            <strong>Systemeinstellungen → Datenschutz &amp; Sicherheit → Vollständiger Festplattenzugriff</strong>{" "}
+            hinzufügen und App neu starten.
+          </p>
+        )}
         <div className="path-list">
           {getMusicPaths().map((p) => (
             <div key={p} className="path-item">
@@ -348,10 +552,19 @@ export default function SettingsView() {
         <div className="path-input-row">
           <input
             type="text"
-            placeholder="/Pfad/zum/Musik-Ordner"
+            placeholder="/Pfad/zum/Musik-Ordner oder /Volumes/NAS/music"
             value={musicPathInput}
             onChange={(e) => setMusicPathInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleAddMusicPathFromInput()}
           />
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={handleAddMusicPathFromInput}
+            disabled={!musicPathInput.trim()}
+          >
+            Hinzufügen
+          </button>
           <button
             type="button"
             className="btn-secondary"
@@ -365,9 +578,17 @@ export default function SettingsView() {
             type="button"
             className="btn-secondary"
             onClick={handleCheckMusicPath}
-            disabled={checkingMusicPath || getMusicPaths().length === 0}
+            disabled={checkingMusicPath || (!musicPathInput.trim() && getMusicPaths().length === 0)}
           >
             {checkingMusicPath ? "Prüfe…" : "Prüfen"}
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => handleDiagnosePath("music")}
+            title="Zeigt, welche Volumes die App sieht"
+          >
+            Diagnose
           </button>
           <button
             type="button"
@@ -378,11 +599,24 @@ export default function SettingsView() {
             {musicScanning ? "Scanne…" : "Musikbibliothek scannen"}
           </button>
         </div>
-        {musicPathCheck && (
+        {(checkingMusicPath || musicPathCheck || diagnoseResult) && (
           <div className="scan-result">
-            {musicPathCheck.error ? (
+            {checkingMusicPath ? (
+              <p>Prüfe Pfad…</p>
+            ) : diagnoseResult ? (
+              <>
+                <p><strong>Diagnose</strong></p>
+                <p>Volumes unter /Volumes: {diagnoseResult.volumes.join(", ") || "(keine)"}</p>
+                <p>Geprüfter Pfad: {diagnoseResult.path_checked}</p>
+                <p>Existiert: {diagnoseResult.path_exists ? "✓ Ja" : "✗ Nein"}</p>
+                <p>Ist Ordner: {diagnoseResult.path_is_dir ? "✓ Ja" : "✗ Nein"}</p>
+                <button type="button" className="btn-secondary btn-sm" onClick={() => setDiagnoseResult(null)}>
+                  Schließen
+                </button>
+              </>
+            ) : musicPathCheck?.error ? (
               <p className="status-warn">{musicPathCheck.error}</p>
-            ) : (
+            ) : musicPathCheck ? (
               <>
                 <p>
                   {musicPathCheck.exists
@@ -393,7 +627,7 @@ export default function SettingsView() {
                   <p>Unterordner: {musicPathCheck.subdirs.slice(0, 5).join(", ")}…</p>
                 )}
               </>
-            )}
+            ) : null}
           </div>
         )}
       </section>
@@ -431,7 +665,7 @@ export default function SettingsView() {
                 setFetchingMetadata(true);
                 const n = await fetchMetadataBatch();
                 alert(`${n} Metadaten geladen.`);
-              } catch (err) {
+              } catch {
                 alert("Metadaten laden fehlgeschlagen. TMDb-API-Key gesetzt?");
               } finally {
                 setFetchingMetadata(false);

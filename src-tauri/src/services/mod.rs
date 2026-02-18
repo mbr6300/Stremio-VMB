@@ -1,3 +1,4 @@
+pub mod quickconnect;
 pub mod storage;
 pub mod local_media;
 pub mod perplexity;

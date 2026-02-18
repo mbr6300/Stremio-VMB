@@ -23,72 +23,78 @@ pub async fn scan_music_dirs_progressive(
 
     let pool_guard = pool.inner().clone();
     tauri::async_runtime::spawn(async move {
+        const EMIT_BATCH_SIZE: usize = 20;
+
         for path in paths {
-            let files = music_metadata::scan_music_directory(&path);
             let mut albums: std::collections::HashMap<String, (MusicAlbum, Vec<MusicTrack>)> =
                 std::collections::HashMap::new();
 
-            for mf in files {
-                let album_key = format!("{}|||{}", mf.artist, mf.album);
-                let music_path = std::path::Path::new(&mf.file_path)
-                    .parent()
-                    .and_then(|p| p.to_str())
-                    .unwrap_or(&path)
-                    .to_string();
+            for batch in music_metadata::scan_music_directory_batches(&path, EMIT_BATCH_SIZE) {
+                for mf in batch {
+                    let album_key = format!("{}|||{}", mf.artist, mf.album);
+                    let music_path = std::path::Path::new(&mf.file_path)
+                        .parent()
+                        .and_then(|p| p.to_str())
+                        .unwrap_or(&path)
+                        .to_string();
 
-                let cover_path = if let Some(ref pic) = mf.picture {
-                    music_metadata::save_cover_to_cache(pic, &mf.artist, &mf.album, &cover_cache)
-                        .map(|p| p.to_string_lossy().to_string())
-                } else {
-                    None
-                };
+                    let cover_path = if let Some(ref pic) = mf.picture {
+                        music_metadata::save_cover_to_cache(pic, &mf.artist, &mf.album, &cover_cache)
+                            .map(|p| p.to_string_lossy().to_string())
+                    } else {
+                        None
+                    };
 
-                let track = MusicTrack {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    album_id: String::new(),
-                    title: mf.title.clone(),
-                    track_number: mf.track_number.map(|n| n as i32),
-                    duration: Some(mf.duration_secs as i32),
-                    file_path: mf.file_path.clone(),
-                    file_hash: Some(mf.file_hash.clone()),
-                    created_at: String::new(),
-                };
+                    let track = MusicTrack {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        album_id: String::new(),
+                        title: mf.title.clone(),
+                        track_number: mf.track_number.map(|n| n as i32),
+                        duration: Some(mf.duration_secs as i32),
+                        file_path: mf.file_path.clone(),
+                        file_hash: Some(mf.file_hash.clone()),
+                        created_at: String::new(),
+                    };
 
-                albums
-                    .entry(album_key)
-                    .and_modify(|(album, tracks)| {
-                        tracks.push(MusicTrack {
-                            album_id: album.id.clone(),
-                            ..track.clone()
+                    albums
+                        .entry(album_key)
+                        .and_modify(|(album, tracks)| {
+                            tracks.push(MusicTrack {
+                                album_id: album.id.clone(),
+                                ..track.clone()
+                            });
+                        })
+                        .or_insert_with(|| {
+                            let album_id = uuid::Uuid::new_v4().to_string();
+                            let album = MusicAlbum {
+                                id: album_id.clone(),
+                                artist: mf.artist.clone(),
+                                album_title: mf.album.clone(),
+                                year: mf.year.map(|y| y as i32),
+                                cover_path,
+                                music_path,
+                                created_at: String::new(),
+                                updated_at: String::new(),
+                            };
+                            let track_with_album = MusicTrack {
+                                album_id: album_id.clone(),
+                                ..track
+                            };
+                            (album, vec![track_with_album])
                         });
-                    })
-                    .or_insert_with(|| {
-                        let album_id = uuid::Uuid::new_v4().to_string();
-                        let album = MusicAlbum {
-                            id: album_id.clone(),
-                            artist: mf.artist.clone(),
-                            album_title: mf.album.clone(),
-                            year: mf.year.map(|y| y as i32),
-                            cover_path,
-                            music_path,
-                            created_at: String::new(),
-                            updated_at: String::new(),
-                        };
-                        let track_with_album = MusicTrack {
-                            album_id: album_id.clone(),
-                            ..track
-                        };
-                        (album, vec![track_with_album])
-                    });
-            }
+                }
 
-            for (_, (album, tracks)) in albums {
-                if music_storage::upsert_music_album(&pool_guard, &album).await.is_ok() {
-                    for track in tracks {
-                        let _ = music_storage::upsert_music_track(&pool_guard, &track).await;
-                    }
-                    if let Ok(Some(a)) = music_storage::get_music_album(&pool_guard, &album.id).await {
-                        let _ = app.emit("music-album-added", &a);
+                // Nach jedem Batch: Alben in DB speichern und an Frontend emittieren
+                for (album, tracks) in albums.values_mut() {
+                    if music_storage::upsert_music_album(&pool_guard, album).await.is_ok() {
+                        for track in std::mem::take(tracks) {
+                            let _ = music_storage::upsert_music_track(&pool_guard, &track).await;
+                        }
+                        if let Ok(Some(a)) =
+                            music_storage::get_music_album(&pool_guard, &album.id).await
+                        {
+                            let _ = app.emit("music-album-added", &a);
+                        }
                     }
                 }
             }

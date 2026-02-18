@@ -42,7 +42,7 @@ export default function MusicAlbumDetail() {
     return `${m}:${s.toString().padStart(2, "0")}`;
   }
 
-  function handlePlayTrack(track: MusicTrack, index: number) {
+  function handlePlayTrack(track: MusicTrack) {
     if (!album) return;
     const queue = tracks.map((t) => ({ track: t, album }));
     play(track, album, queue);
@@ -77,7 +77,7 @@ export default function MusicAlbumDetail() {
             <button
               type="button"
               className="music-track-row"
-              onClick={() => handlePlayTrack(track, i)}
+              onClick={() => handlePlayTrack(track)}
             >
               <span className="music-track-num">{i + 1}</span>
               <span className="music-track-title">{track.title}</span>

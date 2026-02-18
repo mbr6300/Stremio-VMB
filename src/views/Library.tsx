@@ -71,7 +71,7 @@ export default function Library() {
         try {
           const parsed = JSON.parse(metadata.genres) as string[];
           parsed.forEach((g) => set.add(g));
-        } catch {}
+        } catch { /* ignore parse error */ }
       }
     }
     return Array.from(set).sort();
@@ -243,7 +243,7 @@ export default function Library() {
                   if (n > 0) {
                     // Erfolg
                   }
-                } catch (err) {
+                } catch {
                   alert("AI-Klassifizierung fehlgeschlagen. Perplexity-API-Key in Einstellungen setzen.");
                 } finally {
                   setIsImproving(false);

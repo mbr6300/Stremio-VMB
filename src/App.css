@@ -141,10 +141,49 @@ body {
   height: 20px;
 }
 
+.main-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 8px 0 12px;
+  margin: -8px 0 0;
+  flex-shrink: 0;
+}
+
+.main-header-spacer {
+  flex: 1;
+}
+
+.fullscreen-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.fullscreen-btn:hover {
+  background: rgba(124, 58, 237, 0.15);
+  color: var(--text-primary);
+}
+
+.fullscreen-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
 .main-content {
   margin-left: var(--sidebar-width);
   flex: 1;
   padding: 32px;
+  padding-top: 16px;
   min-height: 0;
   height: 100vh;
   overflow: hidden;
@@ -957,8 +996,13 @@ body {
 }
 
 .scan-result {
-  font-size: 13px;
-  color: var(--text-secondary);
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
 }
 
 .setting-row {
@@ -1058,6 +1102,41 @@ body {
   font-family: monospace;
   font-size: 13px;
   word-break: break-all;
+}
+
+.qc-status {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+}
+
+.qc-connected .qc-status-badge {
+  color: var(--success);
+}
+
+.qc-disconnected .qc-status-badge {
+  color: var(--text-secondary);
+}
+
+.qc-status-badge.connected {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.qc-status-message {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.qc-status-url {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.qc-status-url a {
+  color: var(--accent);
 }
 
 .rd-connected-info {

@@ -57,6 +57,8 @@ pub fn run() {
             commands::library::improve_classifications_with_perplexity,
             commands::settings::save_settings,
             commands::settings::load_settings,
+            commands::settings::check_quickconnect,
+            commands::settings::diagnose_path,
             commands::realdebrid::rd_get_device_code,
             commands::realdebrid::rd_poll_credentials,
             commands::realdebrid::rd_save_api_key,

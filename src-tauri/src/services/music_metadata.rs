@@ -7,6 +7,35 @@ use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
+/// Normalisiert häufige Pfad-Schreibfehler (z.B. /volume -> /Volumes auf macOS).
+fn normalize_path(path: &str) -> String {
+    let path = path.trim();
+    #[cfg(target_os = "macos")]
+    {
+        if path.starts_with("/volume/") {
+            return format!("/Volumes/{}", path.trim_start_matches("/volume/"));
+        }
+        if path == "/volume" || path.starts_with("/volume") {
+            return path.replacen("/volume", "/Volumes", 1);
+        }
+    }
+    path.to_string()
+}
+
+fn expand_path(path: &str) -> String {
+    let path = normalize_path(path);
+    if path.starts_with("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            return format!("{}/{}", home.trim_end_matches('/'), path.trim_start_matches("~/"));
+        }
+    } else if path == "~" {
+        if let Ok(home) = std::env::var("HOME") {
+            return home;
+        }
+    }
+    path.to_string()
+}
+
 const AUDIO_EXTENSIONS: &[&str] = &["mp3", "flac", "m4a", "aac", "ogg", "wma", "wav", "opus"];
 
 fn is_audio_file(path: &Path) -> bool {
@@ -43,8 +72,14 @@ pub struct MusicPathCheckResult {
 
 pub fn check_music_path(path: &str) -> MusicPathCheckResult {
     let path_str = path.trim();
-    let p = Path::new(path_str);
+    let expanded = expand_path(path_str);
+    let p = Path::new(&expanded);
     if !p.exists() {
+        let hint = if path_str.to_lowercase().contains("/volume") && !path_str.starts_with("/Volumes") {
+            " Hinweis: Auf macOS heißt es /Volumes/ (großes V), nicht /volume/."
+        } else {
+            ""
+        };
         return MusicPathCheckResult {
             path: path_str.to_string(),
             exists: false,
@@ -53,7 +88,10 @@ pub fn check_music_path(path: &str) -> MusicPathCheckResult {
             sample_files: vec![],
             sample_all: vec![],
             subdirs: vec![],
-            error: Some("Pfad existiert nicht.".to_string()),
+            error: Some(format!(
+                "Pfad existiert nicht (geprüft: {}).{} NAS in Finder einbinden. macOS: App unter Systemeinstellungen → Datenschutz → Vollständiger Festplattenzugriff hinzufügen.",
+                expanded, hint
+            )),
         };
     }
     if !p.is_dir() {
@@ -117,7 +155,23 @@ fn file_hash(path: &Path) -> String {
 
 pub fn scan_music_directory(path: &str) -> Vec<MusicFile> {
     let mut results = Vec::new();
-    let base = Path::new(path);
+    for batch in scan_music_directory_batches(path, usize::MAX) {
+        results.extend(batch);
+    }
+    results
+}
+
+/// Scannt Verzeichnis und liefert Batches von Audiodateien.
+/// Ermöglicht fortlaufende Verarbeitung und UI-Updates während des Scans.
+pub fn scan_music_directory_batches(
+    path: &str,
+    batch_size: usize,
+) -> impl Iterator<Item = Vec<MusicFile>> {
+    let expanded = expand_path(path.trim());
+    let base = Path::new(&expanded);
+
+    let mut batch = Vec::with_capacity(batch_size);
+    let mut batches = Vec::new();
 
     for entry in WalkDir::new(base)
         .follow_links(true)
@@ -129,10 +183,17 @@ pub fn scan_music_directory(path: &str) -> Vec<MusicFile> {
             continue;
         }
         if let Some(mf) = extract_music_file(p) {
-            results.push(mf);
+            batch.push(mf);
+            if batch.len() >= batch_size {
+                batches.push(std::mem::take(&mut batch));
+                batch = Vec::with_capacity(batch_size);
+            }
         }
     }
-    results
+    if !batch.is_empty() {
+        batches.push(batch);
+    }
+    batches.into_iter()
 }
 
 fn extract_music_file(path: &Path) -> Option<MusicFile> {

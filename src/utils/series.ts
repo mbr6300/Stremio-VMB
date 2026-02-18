@@ -43,7 +43,7 @@ export function parseEpisodeInfo(title: string): EpisodeInfo | null {
 }
 
 export function extractSeriesName(title: string): string {
-  let cleaned = title
+  const cleaned = title
     .replace(/[Ss]\d{1,2}[Ee]\d{1,2}/g, "")
     .replace(/\d{1,2}[xX]\d{1,2}/g, "")
     .replace(/[Ee]p?\d{1,2}/g, "")

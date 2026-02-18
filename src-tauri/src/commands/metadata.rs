@@ -317,15 +317,21 @@ pub async fn get_person_details(
         .await
         {
             details.anecdotes = anecdotes.anecdotes;
-            if details.height.is_none() {
-                details.height = anecdotes.height;
-            }
-            if details.partner_status.is_none() {
-                details.partner_status = anecdotes.partner_status;
-            }
-            if details.children.is_none() {
-                details.children = anecdotes.children;
-            }
+            details.height = anecdotes
+                .height
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .or(details.height);
+            details.partner_status = anecdotes
+                .partner_status
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .or(details.partner_status);
+            details.children = anecdotes
+                .children
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .or(details.children);
         }
     }
 

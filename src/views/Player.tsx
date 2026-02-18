@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   getMediaItem,
@@ -22,15 +22,7 @@ export default function Player() {
   const [useHtml5, setUseHtml5] = useState(false);
   const [launched, setLaunched] = useState(false);
 
-  useEffect(() => {
-    loadPlayerConfig();
-  }, []);
-
-  useEffect(() => {
-    if (id && preferredPlayer !== undefined) loadMedia(id);
-  }, [id, preferredPlayer]);
-
-  async function loadPlayerConfig() {
+  const loadPlayerConfig = useCallback(async () => {
     try {
       const [detectedPlayers, settings] = await Promise.all([
         detectPlayers(),
@@ -46,9 +38,31 @@ export default function Player() {
     } catch (err) {
       console.error("Failed to load player config:", err);
     }
-  }
+  }, []);
 
-  async function loadMedia(mediaId: string) {
+  const hasExternalPlayer = useCallback((): boolean => {
+    if (preferredPlayer && preferredPlayer !== "html5" && preferredPlayer !== "system") {
+      return players.some((p) => p.id === preferredPlayer);
+    }
+    return players.length > 0;
+  }, [preferredPlayer, players]);
+
+  const launchExternalPlayer = useCallback(async (filePath: string) => {
+    try {
+      if (preferredPlayer && preferredPlayer !== "html5" && preferredPlayer !== "system") {
+        await openInPlayer(preferredPlayer, filePath);
+      } else if (preferredPlayer === "system" || players.length === 0) {
+        await openInDefaultPlayer(filePath);
+      } else {
+        await openInPlayer(players[0].id, filePath);
+      }
+      setLaunched(true);
+    } catch (err) {
+      setError(`Fehler beim Starten des Players: ${err}`);
+    }
+  }, [preferredPlayer, players]);
+
+  const loadMedia = useCallback(async (mediaId: string) => {
     try {
       const mediaItem = await getMediaItem(mediaId);
       if (!mediaItem) {
@@ -72,29 +86,19 @@ export default function Player() {
     } catch (err) {
       setError(`Fehler beim Laden: ${err}`);
     }
-  }
+  }, [useHtml5, hasExternalPlayer, launchExternalPlayer]);
 
-  function hasExternalPlayer(): boolean {
-    if (preferredPlayer && preferredPlayer !== "html5" && preferredPlayer !== "system") {
-      return players.some((p) => p.id === preferredPlayer);
-    }
-    return players.length > 0;
-  }
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Data fetch on mount
+    loadPlayerConfig();
+  }, [loadPlayerConfig]);
 
-  async function launchExternalPlayer(filePath: string) {
-    try {
-      if (preferredPlayer && preferredPlayer !== "html5" && preferredPlayer !== "system") {
-        await openInPlayer(preferredPlayer, filePath);
-      } else if (preferredPlayer === "system" || players.length === 0) {
-        await openInDefaultPlayer(filePath);
-      } else {
-        await openInPlayer(players[0].id, filePath);
-      }
-      setLaunched(true);
-    } catch (err) {
-      setError(`Fehler beim Starten des Players: ${err}`);
+  useEffect(() => {
+    if (id && preferredPlayer !== undefined) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Data fetch when id changes
+      loadMedia(id);
     }
-  }
+  }, [id, preferredPlayer, loadMedia]);
 
   function switchToHtml5() {
     if (!item) return;

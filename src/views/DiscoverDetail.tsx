@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useCallback, useEffect, useState, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useParams, useNavigate } from "react-router-dom";
 import {
@@ -40,20 +40,7 @@ export default function DiscoverDetail() {
   const extendedInfoRef = useRef<MediaExtendedInfo | null>(null);
   const preloadTmdbIdRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    if (tmdbId && mediaType) loadDetail(Number(tmdbId), mediaType);
-    detectPlayers().then(setPlayers).catch(() => {});
-  }, [tmdbId, mediaType]);
-
-  useEffect(() => {
-    if (metadata && (mediaType === "movie" || mediaType === "tv")) {
-      loadStreams();
-    } else {
-      setStreams([]);
-    }
-  }, [metadata?.title, metadata?.release_date, mediaType, tmdbId]);
-
-  async function loadDetail(id: number, type: string) {
+  const loadDetail = useCallback(async (id: number, type: string) => {
     try {
       setLoading(true);
       setError("");
@@ -68,9 +55,9 @@ export default function DiscoverDetail() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
-  async function loadStreams() {
+  const loadStreams = useCallback(async () => {
     if (!metadata?.title) return;
     try {
       setStreamsLoading(true);
@@ -91,7 +78,20 @@ export default function DiscoverDetail() {
     } finally {
       setStreamsLoading(false);
     }
-  }
+  }, [metadata, mediaType, tmdbId]);
+
+  useEffect(() => {
+    if (tmdbId && mediaType) loadDetail(Number(tmdbId), mediaType);
+    detectPlayers().then(setPlayers).catch(() => {});
+  }, [tmdbId, mediaType, loadDetail]);
+
+  useEffect(() => {
+    if (metadata && (mediaType === "movie" || mediaType === "tv")) {
+      loadStreams();
+    } else {
+      setStreams([]);
+    }
+  }, [metadata, mediaType, loadStreams]);
 
   const genres: string[] = useMemo(() => {
     if (!metadata?.genres) return [];

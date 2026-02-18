@@ -7,10 +7,7 @@ import {
   useState,
 } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import {
-  getMusicAlbum,
-  setMusicTrackRating,
-} from "../api/commands";
+import { setMusicTrackRating } from "../api/commands";
 import type { MusicAlbum, MusicTrack } from "../types";
 
 interface MusicPlayerContextValue {

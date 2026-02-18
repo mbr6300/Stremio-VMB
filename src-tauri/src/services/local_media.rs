@@ -2,6 +2,34 @@ use sha2::{Sha256, Digest};
 use std::path::Path;
 use walkdir::WalkDir;
 
+fn normalize_path(path: &str) -> String {
+    let path = path.trim();
+    #[cfg(target_os = "macos")]
+    {
+        if path.starts_with("/volume/") {
+            return format!("/Volumes/{}", path.trim_start_matches("/volume/"));
+        }
+        if path == "/volume" || path.starts_with("/volume") {
+            return path.replacen("/volume", "/Volumes", 1);
+        }
+    }
+    path.to_string()
+}
+
+fn expand_path(path: &str) -> String {
+    let path = normalize_path(path);
+    if path.starts_with("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            return format!("{}/{}", home.trim_end_matches('/'), path.trim_start_matches("~/"));
+        }
+    } else if path == "~" {
+        if let Ok(home) = std::env::var("HOME") {
+            return home;
+        }
+    }
+    path.to_string()
+}
+
 const VIDEO_EXTENSIONS: &[&str] = &[
     "mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v", "mpg", "mpeg", "m2v", "m4p",
     "ts", "m2ts", "mts", "3gp", "3g2", "ogv", "vob", "iso", "divx", "xvid",
@@ -29,7 +57,8 @@ pub struct PathCheckResult {
 
 pub fn check_path(path_str: &str) -> PathCheckResult {
     let path_str = path_str.trim();
-    let path = Path::new(path_str);
+    let expanded = expand_path(path_str);
+    let path = Path::new(&expanded);
     if !path.exists() {
         return PathCheckResult {
             path: path_str.to_string(),
@@ -39,7 +68,10 @@ pub fn check_path(path_str: &str) -> PathCheckResult {
             sample_files: vec![],
             sample_all: vec![],
             subdirs: vec![],
-            error: Some("Pfad existiert nicht. NAS vorher in Finder einbinden (⌘K).".to_string()),
+            error: Some(format!(
+                "Pfad existiert nicht (geprüft: {}). NAS in Finder einbinden. macOS: App unter Systemeinstellungen → Datenschutz → Vollständiger Festplattenzugriff hinzufügen.",
+                expanded
+            )),
         };
     }
     if !path.is_dir() {
@@ -110,7 +142,8 @@ pub fn scan_directories(paths: &[String]) -> Vec<ScannedFile> {
     let mut results = Vec::new();
 
     for dir_path in paths {
-        let path = Path::new(dir_path);
+        let expanded = expand_path(dir_path);
+        let path = Path::new(&expanded);
         if !path.exists() {
             log::warn!("Medienpfad existiert nicht: {}", dir_path);
             continue;
@@ -174,7 +207,8 @@ where
     F: FnMut(ScannedFile),
 {
     for dir_path in paths {
-        let path = Path::new(dir_path);
+        let expanded = expand_path(dir_path);
+        let path = Path::new(&expanded);
         if !path.exists() {
             log::warn!("Medienpfad existiert nicht: {}", dir_path);
             continue;

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   getDiscoverLists,
   refreshDiscoverLists,
@@ -439,7 +439,7 @@ const PROVIDER_LOGOS: Record<string, string> = {
   apple: "https://cdn.simpleicons.org/appletv/FFFFFF",
 };
 
-function getSectionIcon(list: DiscoverList): JSX.Element | null {
+function getSectionIcon(list: DiscoverList): React.ReactElement | null {
   let src: string | null = null;
   let alt = "";
   if (list.list_type === "imdb_top") {

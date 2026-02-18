@@ -47,10 +47,9 @@ pub async fn scan_media_dirs_progressive(
 
 #[tauri::command]
 pub async fn check_media_path(path: String) -> Result<PathCheckResult, String> {
-    let result = tokio::task::spawn_blocking(move || local_media::check_path(&path))
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(result)
+    // Direkt ausführen, nicht spawn_blocking: Netzwerk-Volumes (SMB) sind unter macOS
+    // im Hauptthread zuverlässiger zugreifbar als in Hintergrund-Threads.
+    Ok(local_media::check_path(&path))
 }
 
 #[tauri::command]

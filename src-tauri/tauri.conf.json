@@ -10,30 +10,12 @@
     "beforeBuildCommand": "npm run build"
   },
   "app": {
-    "windows": [
-      {
-        "title": "Stremio VMB",
-        "width": 1280,
-        "height": 800,
-        "minWidth": 900,
-        "minHeight": 600,
-        "resizable": true,
-        "fullscreen": false
-      }
-    ],
-    "security": {
-      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost https://asset.localhost https://image.tmdb.org https://cdn.simpleicons.org; media-src 'self' https: blob:; connect-src 'self' https://api.themoviedb.org https://api.real-debrid.com https://fonts.googleapis.com https://fonts.gstatic.com; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com"
-    }
+    "windows": [{"title": "Stremio VMB", "width": 1280, "height": 800, "minWidth": 900, "minHeight": 600, "resizable": true, "fullscreen": false}],
+    "security": {"csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost https://asset.localhost https://image.tmdb.org https://cdn.simpleicons.org; media-src 'self' https: blob:; connect-src 'self' https://api.themoviedb.org https://api.real-debrid.com https://fonts.googleapis.com https://fonts.gstatic.com; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com"}
   },
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
-    ]
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"]
   }
 }
